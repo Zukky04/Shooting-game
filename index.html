@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>シューティングゲーム</title>
+  <style>
+    /* Canvasを画面中央に表示 */
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+    }
+    #score {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 20px;
+      z-index: 1;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+      background: #111;
+    }
+  </style>
+</head>
+<body>
+  <div id="score">Score: 0</div>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+  
+  <script>
+    // 画像ファイルの読み込み用オブジェクト
+    const images = {};
+    const loadImages = (sources, callback) => {
+      let loadedImages = 0;
+      const numImages = Object.keys(sources).length;
+      for (let src in sources) {
+        images[src] = new Image();
+        images[src].src = sources[src];
+        images[src].onload = () => {
+          loadedImages++;
+          if (loadedImages >= numImages) {
+            callback();
+          }
+        };
+      }
+    };
+
+    // 画像ファイルのパス（imagesフォルダ内）
+    const imageSources = {
+      // 自機アイコンをSpaceship.pngに変更
+      player: "images/Spaceship.png", 
+      bullet: "images/bullet.png",
+      enemy1: "images/enemy1.png",
+      enemy2: "images/enemy2.png",
+      beam: "images/beam.png",
+      explosion: "images/explosion.png"
+    };
+
+    // Canvasとコンテキスト取得
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // キーの状態管理
+    const keys = {};
+    document.addEventListener("keydown", e => keys[e.code] = true);
+    document.addEventListener("keyup", e => keys[e.code] = false);
+
+    // ゲームオブジェクトの配列
+    const playerBullets = [];
+    const enemyBullets = [];
+    const enemies = [];
+    const explosions = [];
+
+    // ゲーム変数
+    let score = 0;
+    let gameOver = false;
+
+    // 自機クラス
+    class Player {
+      constructor() {
+        this.width = 40;
+        this.height = 40;
+        this.x = canvas.width / 2 - this.width / 2;
+        this.y = canvas.height - this.height - 10;
+        this.speed = 5;
+        this.shootDelay = 300; // ミリ秒
+        this.lastShotTime = 0;
+      }
+      update() {
+        // 移動
+        if (keys["ArrowLeft"] && this.x > 0) {
+          this.x -= this.speed;
+        }
+        if (keys["ArrowRight"] && this.x < canvas.width - this.width) {
+          this.x += this.speed;
+        }
+        if (keys["ArrowUp"] && this.y > 0) {
+          this.y -= this.speed;
+        }
+        if (keys["ArrowDown"] && this.y < canvas.height - this.height) {
+          this.y += this.speed;
+        }
+        // スペースキーで弾を発射
+        if (keys["Space"]) {
+          let now = Date.now();
+          if (now - this.lastShotTime > this.shootDelay) {
+            playerBullets.push(new Bullet(this.x + this.width/2 - 5, this.y));
+            this.lastShotTime = now;
+          }
+        }
+      }
+      draw() {
+        // 自機アイコンを描画
+        ctx.drawImage(images.player, this.x, this.y, this.width, this.height);
+      }
+    }
+
+    // 自機の弾クラス
+    class Bullet {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.width = 10;
+        this.height = 20;
+        this.speed = 7;
+      }
+      update() {
+        this.y -= this.speed;
+      }
+      draw() {
+        ctx.drawImage(images.bullet, this.x, this.y, this.width, this.height);
+      }
+    }
+
+    // 敵クラス（enemy1.png, enemy2.pngのどちらかをランダムに使用）
+    class Enemy {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.width = 40;
+        this.height = 40;
+        this.speed = 2;
+        // ランダムで機体1か2を選ぶ
+        this.type = Math.random() < 0.5 ? "enemy1" : "enemy2";
+        this.shootDelay = 2000; // 2秒ごとに弾を発射
+        this.lastShotTime = Date.now();
+      }
+      update() {
+        // 左右往復の簡易移動
+        this.x += this.speed;
+        if (this.x < 0 || this.x > canvas.width - this.width) {
+          this.speed = -this.speed;
+          this.y += this.height; // 少し下に移動
+        }
+        // 一定時間ごとに敵弾発射
+        let now = Date.now();
+        if (now - this.lastShotTime > this.shootDelay) {
+          enemyBullets.push(new EnemyBullet(this.x + this.width/2 - 5, this.y + this.height));
+          this.lastShotTime = now;
+        }
+      }
+      draw() {
+        ctx.drawImage(images[this.type], this.x, this.y, this.width, this.height);
+      }
+    }
+
+    // 敵の弾クラス
+    class EnemyBullet {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.width = 10;
+        this.height = 20;
+        this.speed = 4;
+      }
+      update() {
+        this.y += this.speed;
+      }
+      draw() {
+        ctx.drawImage(images.beam, this.x, this.y, this.width, this.height);
+      }
+    }
+
+    // 爆発クラス
+    class Explosion {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.width = 40;
+        this.height = 40;
+        this.duration = 500; // 0.5秒
+        this.startTime = Date.now();
+      }
+      update() {
+        // 経過時間で削除
+      }
+      draw() {
+        ctx.drawImage(images.explosion, this.x, this.y, this.width, this.height);
+      }
+      isFinished() {
+        return Date.now() - this.startTime > this.duration;
+      }
+    }
+
+    // 衝突判定
+    function isColliding(a, b) {
+      return a.x < b.x + b.width &&
+             a.x + a.width > b.x &&
+             a.y < b.y + b.height &&
+             a.y + a.height > b.y;
+    }
+
+    // プレイヤーを生成
+    const player = new Player();
+
+    // 敵を定期的に追加するためのタイマー
+    let enemySpawnInterval = 3000; // 3秒ごと
+    let lastEnemySpawn = Date.now();
+
+    // ゲームループ
+    function gameLoop() {
+      if (gameOver) {
+        // ゲームオーバー画面表示
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#fff";
+        ctx.font = "40px sans-serif";
+        ctx.fillText("GAME OVER", canvas.width/2 - 120, canvas.height/2);
+        return;
+      }
+      
+      // 画面クリア
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // プレイヤー更新・描画
+      player.update();
+      player.draw();
+      
+      // 自機の弾の更新と描画
+      for (let i = playerBullets.length - 1; i >= 0; i--) {
+        let bullet = playerBullets[i];
+        bullet.update();
+        // 画面外に出たら削除
+        if (bullet.y + bullet.height < 0) {
+          playerBullets.splice(i, 1);
+          continue;
+        }
+        bullet.draw();
+      }
+      
+      // 敵の生成と更新・描画
+      if (Date.now() - lastEnemySpawn > enemySpawnInterval) {
+        let spawnX = Math.random() * (canvas.width - 40);
+        enemies.push(new Enemy(spawnX, 10));
+        lastEnemySpawn = Date.now();
+      }
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        let enemy = enemies[i];
+        enemy.update();
+        enemy.draw();
+        // 自機弾との衝突判定
+        for (let j = playerBullets.length - 1; j >= 0; j--) {
+          let bullet = playerBullets[j];
+          if (isColliding(bullet, enemy)) {
+            score += 10;
+            document.getElementById("score").innerText = "Score: " + score;
+            explosions.push(new Explosion(enemy.x, enemy.y));
+            enemies.splice(i, 1);
+            playerBullets.splice(j, 1);
+            break;
+          }
+        }
+      }
+      
+      // 敵の弾の更新と描画
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        let eb = enemyBullets[i];
+        eb.update();
+        // 自機と衝突判定
+        if (isColliding(eb, player)) {
+          explosions.push(new Explosion(player.x, player.y));
+          gameOver = true;
+        }
+        // 画面外に出たら削除
+        if (eb.y > canvas.height) {
+          enemyBullets.splice(i, 1);
+          continue;
+        }
+        eb.draw();
+      }
+      
+      // 爆発の更新・描画
+      for (let i = explosions.length - 1; i >= 0; i--) {
+        let exp = explosions[i];
+        exp.draw();
+        if (exp.isFinished()) {
+          explosions.splice(i, 1);
+        }
+      }
+      
+      requestAnimationFrame(gameLoop);
+    }
+
+    // 画像読み込み完了後にゲーム開始
+    loadImages(imageSources, () => {
+      gameLoop();
+    });
+  </script>
+</body>
+</html>
